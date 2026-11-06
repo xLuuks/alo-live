@@ -10,7 +10,7 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.4
 PyQt5==5.15.11
-PyQt5-Qt5==5.15.2
+PyQt5-Qt5==5.15.19
 PyQt5_sip==12.20.0
 requests==2.34.2
 urllib3==2.8.0
