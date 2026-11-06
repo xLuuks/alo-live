@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="panel-version" content="{{ panel_version }}">
+  <title>Alô Live · Painel de produção</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/alo-live.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='painel.css') }}">
+  <script src="{{ url_for('static', filename='painel.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img class="brand-mark" src="{{ url_for('static', filename='brand/alo-live.png') }}" alt="" width="64" height="64"><div><span class="eyebrow">COMENTÁRIOS AO VIVO</span><h1>Alô Live</h1><p class="brand-caption">A voz do público, perto do apresentador.</p></div></div>
+    <div class="header-actions"><div class="mode-switch" role="group" aria-label="Modo do painel"><button id="mode-youtube" type="button" aria-pressed="true">YouTube + manual</button><button id="mode-manual" type="button" aria-pressed="false">Só recados manuais</button></div><span id="panel-health" role="status">Conectando ao painel…</span><a class="button secondary" href="/teleprompter" target="_blank" rel="noopener">Tela do apresentador ↗</a></div>
+  </header>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <div id="storage-status" class="storage-warning" role="status" hidden></div>
+  <p id="mode-note" class="muted" hidden></p>
+  <details id="connection-settings" class="connection" open>
+    <summary>Configurar transmissões <span class="muted">Links e acesso ao YouTube</span></summary>
+    <form id="connection-form">
+      <div class="connection-grid">
+        <label>Transmissão 1<input name="live1" placeholder="Link do vídeo ao vivo do primeiro canal" autocomplete="off"></label>
+        <label>Transmissão 2 <span class="muted">(opcional)</span><input name="live2" placeholder="Link do vídeo ao vivo do segundo canal" autocomplete="off"></label>
+        <label>Chave da YouTube Data API v3<input type="password" name="api_key" autocomplete="off" placeholder="{% if key_available %}Chave configurada no servidor{% else %}Cole sua chave da API{% endif %}"></label>
+        <label>Intervalo de consulta<select name="interval"><option value="30">30 segundos</option><option value="15">15 segundos</option><option value="5">5 segundos</option><option value="60">60 segundos</option></select></label>
+      </div>
+      <p class="muted">Cole os links dos vídeos, não dos canais. A chave não é salva em arquivo. Intervalos menores consomem mais cota da API. Reconectar a mesma live preserva os comentários; trocar o vídeo substitui apenas a lista daquele canal.</p>
+      <div class="actions"><button class="primary" type="submit">Conectar transmissões</button><button id="disconnect" type="button">Desconectar todas</button></div>
+    </form>
+  </details>
+  <section id="sources" class="sources" aria-label="Conexões com o YouTube"></section>
+  <main class="workspace">
+    <section class="panel inbox">
+      <div class="section-heading"><div><span class="step">01 · ACOMPANHAR</span><h2>Comentários</h2></div><span id="comment-count" class="badge">0</span></div>
+      <div class="filters"><input id="search" type="search" placeholder="Buscar pessoa ou comentário…" aria-label="Buscar pessoa ou comentário"><select id="source-filter" aria-label="Filtrar transmissão"><option value="">Todos os canais</option><option value="1">Transmissão 1</option><option value="2">Transmissão 2</option></select></div>
+      <div class="filter-options"><label class="check"><input id="hide-sent" type="checkbox"> Ocultar enviados</label><label class="check"><input id="pause" type="checkbox"> Pausar atualização</label></div>
+      <button id="new-comments" class="new-comments" type="button" disabled>Lista atualizada</button>
+      <div id="comments" tabindex="0" aria-label="Lista de comentários"><p class="empty">Conecte uma live para receber os comentários.</p></div>
+      <p class="footnote">Novidades ficam aguardando sua atualização. A lista não muda de posição enquanto você lê.</p>
+    </section>
+    <section class="panel compose">
+      <div class="section-heading"><div><span class="step">02 · PREPARAR</span><h2>Recado para o apresentador</h2></div></div>
+      <p id="selection" class="selection">Selecione um comentário ou escreva um recado manual.</p>
+      <form id="compose-form"><label for="message">Texto que aparecerá na tela</label><textarea id="message" name="mensagem" rows="7" maxlength="5000" required readonly placeholder="Ex.: Maria, de Recife, pede um abraço!"></textarea><div class="draft-meta"><span id="draft-status" role="status">O rascunho é salvo neste navegador.</span><span id="character-count">0 / 5.000</span></div><button class="primary send-button" type="submit" disabled>Enviar ao apresentador →</button></form>
+      <div class="actions compose-actions"><button id="manual" type="button">Novo recado manual</button><button id="convert-manual" type="button" hidden>Usar este texto como manual</button></div>
+      <details class="draft-recovery"><summary>Recuperar outro rascunho salvo</summary><label for="saved-drafts">Rascunhos de outras abas</label><select id="saved-drafts"><option value="">Nenhum outro rascunho salvo</option></select><button id="restore-draft" type="button" disabled>Copiar rascunho para esta aba</button></details>
+      <div class="guidance"><strong>Você controla o que vai ao ar.</strong><p>Preparar não envia. Confira o nome e o texto antes de enviar o recado.</p></div>
+    </section>
+    <section class="panel queue-panel">
+      <div class="section-heading"><div><span class="step">03 · ACOMPANHAR ENTREGA</span><h2>Recados enviados</h2></div><span id="queue-count" class="badge">0</span></div>
+      <div id="delivery-status" class="delivery" role="status">Aguardando conexão da tela do apresentador.</div>
+      <p class="muted">Todos aparecem juntos, nesta ordem. “Lido” retira o recado da tela.</p>
+      <div id="queue"></div>
+      <button id="clear" class="danger" type="button">Retirar todos da tela</button>
+      <button id="undo-removal" type="button" disabled>Desfazer última retirada</button>
+      <details id="history-details" class="history-section"><summary>Histórico de recados <span id="history-count" class="badge">0</span></summary><p class="muted">Últimos 200 recados retirados. Restaure um envio removido por engano.</p><div id="history"></div></details>
+    </section>
+  </main>
+  <footer class="site-footer">Desenvolvido por <a href="https://github.com/xLuuks" target="_blank" rel="noopener noreferrer">Luks Alves</a></footer>
+  <dialog id="edit-dialog" aria-labelledby="edit-title"><form id="edit-form"><h2 id="edit-title">Editar recado enviado</h2><label for="edit-text">Texto para o apresentador</label><textarea id="edit-text" rows="6" maxlength="5000" required></textarea><p id="edit-error" class="error-text" role="alert" hidden></p><div class="actions"><button class="primary" type="submit">Salvar alteração</button><button id="cancel-edit" type="button">Cancelar</button><button id="reload-edit" type="button" hidden>Carregar texto atual</button></div></form></dialog>
+</body>
+</html>
