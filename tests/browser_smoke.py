@@ -2,21 +2,65 @@
 
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, gettempdir
 import threading
 import time
 
 import requests
 from flask import jsonify, request
 from websockets.sync.client import connect
+from websockets.exceptions import ConnectionClosed
 from werkzeug.serving import make_server
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import Teleprompter as server
 from recados import Recados
+from sistema import ManagedSystem
+
+
+@contextmanager
+def browser_workspace():
+    temporary = TemporaryDirectory(prefix="teleprompter-browser-")
+    folder = Path(temporary.name).resolve()
+    if folder.parent != Path(gettempdir()).resolve() or not folder.name.startswith("teleprompter-browser-"):
+        raise RuntimeError("Pasta temporária de teste fora do destino esperado.")
+    try:
+        yield str(folder)
+    finally:
+        # O Windows pode liberar os arquivos do perfil um pouco depois do Chrome.
+        # Tente novamente por um prazo curto, sem ocultar falhas persistentes.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                temporary.cleanup()
+                break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(.1)
+
+
+def close_browser(process, folder):
+    if process.poll() is not None:
+        return
+    try:
+        port, endpoint = (Path(folder) / "DevToolsActivePort").read_text().splitlines()[:2]
+        # Encerre apenas o navegador deste perfil, permitindo que ele feche os
+        # renderizadores e libere o armazenamento antes de remover os arquivos.
+        with connect(f"ws://127.0.0.1:{port}{endpoint}", proxy=None,
+                     open_timeout=2, close_timeout=2) as browser_socket:
+            browser_socket.send(json.dumps({"id": 1, "method": "Browser.close"}))
+    except (OSError, ValueError, TimeoutError, ConnectionClosed):
+        pass
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        # Se o fechamento normal falhar, encerre a árvore deste processo filho.
+        ManagedSystem._stop_process(process)
 
 
 def check_browser(browser, folder, base, manual_only=False, refinements=False):
@@ -251,8 +295,7 @@ def check_browser(browser, folder, base, manual_only=False, refinements=False):
             assert not exceptions, exceptions
             print("OK no navegador: lista estável, novidades sob controle, rascunho recuperado, edição interna, envio, histórico, restauração, reconexão por canal, confirmação de entrega, largura móvel e texto seguro.")
     finally:
-        process.terminate()
-        process.wait(timeout=10)
+        close_browser(process, folder)
 
 
 def main():
@@ -263,7 +306,7 @@ def main():
     browser = next((p for p in browsers if p.exists()), None)
     if browser is None:
         raise SystemExit("Chrome ou Edge não encontrado para o teste opcional.")
-    with TemporaryDirectory(prefix="teleprompter-browser-") as folder:
+    with browser_workspace() as folder:
         server.queue = Recados(Path(folder) / "mensagens.json")
         current = {"slot": 1, "video_id": "abcdefghijk", "channel": "Canal de teste",
                    "title": "Live de teste", "state": "conectado", "detail": "Simulação",
